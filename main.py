@@ -259,6 +259,15 @@ def continue_team_buildup(update: Update, context: CallbackContext) -> None:
         red_string = ", ".join(reds)
         query.edit_message_text(text=f"Оптимальные составы\n\nКрасные 🔴: {red_string} (Средний MMR = {min_avg_red})\nЗеленые 🟢: {green_string} (Средний MMR = {min_avg_green})")
 
+        context.bot.send_poll(
+            chat_id = update.effective_chat.id,
+            question="Ставки на спорт",
+            options=[
+                "Красные соснут",
+                "Красные соснут, но не в этот раз"
+            ]
+        )
+
 
 def help_command(update: Update, context: CallbackContext) -> None:
     """Displays info on how to use the bot."""
