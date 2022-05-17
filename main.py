@@ -1,4 +1,3 @@
-from re import A
 from telegram import Update, ParseMode, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, CommandHandler, Updater, MessageHandler, CallbackQueryHandler
 import logging
@@ -265,8 +264,10 @@ def help_command(update: Update, context: CallbackContext) -> None:
     """Displays info on how to use the bot."""
     update.message.reply_text("/get_rating чтобы получить общий рейтинг\n/player_stat [Фамилия] чтобы получить персональную статистику игрока\n/start_team_buildup чтобы получить идеальный состав")
 
+with open('token.txt', encoding="utf-8") as f:
+    token = f.read()
 
-updater = Updater(token='5258975365:AAGncaswtCsaFEatrh_PKkc4OfOBXsKiqAY', use_context=True)
+updater = Updater(token=token, use_context=True)
 dispatcher = updater.dispatcher
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
