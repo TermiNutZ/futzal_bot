@@ -1,5 +1,6 @@
 from telegram import Update, ParseMode, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackContext, CommandHandler, Updater, MessageHandler, CallbackQueryHandler
+from telegram.ext import CallbackContext, CommandHandler, Updater, MessageHandler, CallbackQueryHandler, PollHandler
+from collections import deque
 import logging
 
 import matplotlib
@@ -10,6 +11,7 @@ import numpy as np
 import math
 from collections import defaultdict
 import json
+import copy
 
 matplotlib.pyplot.switch_backend('Agg')
 
@@ -101,9 +103,26 @@ class PlayerStats:
     def to_markdown(self):
         # win_loss_diff = self.game_won - self.game_lost
         answer = (f"*Текущий MMR*\t{self.mmr}\n\n*Количество игр*\t{self.game_played}\n*Побед*\t{self.game_won}"
-                  f"\n*Поражений*\t{self.game_lost}\n\n*Забито командой*\t{self.team_scored}\n*Пропущено командой*\t{self.team_missed}")
+                  f"\n*Поражений*\t{self.game_lost}\n\n*Забито командой*\t{self.team_scored}\n*Пропущено командой*\t{self.team_missed}"
+                  f"\n*Текущий стрик*\t{self.get_readable_streak()}")
 
         return answer
+
+    def get_readable_streak(self):
+        if self.current_winstreak == 0:
+            return "Ещё не играл"
+        if self.current_winstreak == 1:
+            return f"{self.current_winstreak} победа"
+        if 2 < self.current_winstreak < 5:
+            return f"{self.current_winstreak} победы подряд"
+        if self.current_winstreak >= 5:
+            return f"{self.current_winstreak} побед подряд"
+        if self.current_winstreak == -1:
+            return f"{abs(self.current_winstreak)} поражение"
+        if -5 < self.current_winstreak < -2:
+            return f"{abs(self.current_winstreak)} поражения подряд"
+        if self.current_winstreak <= -5:
+            return f"{abs(self.current_winstreak)} поражений подряд"
 
     def get_mmr_plot(self, mmr_df):
         plt.figure()
@@ -114,6 +133,16 @@ class PlayerStats:
         plt.savefig(filename)
 
         return open(filename, "rb")
+
+
+class TwoTeamsSplitting:
+
+    def __init__(self):
+        self.min_diff = 100000
+        self.min_avg_green = 0
+        self.min_avg_red = 0
+        self.greens = []
+        self.reds = []
 
 
 def get_pairs(list_of_players):
@@ -215,6 +244,11 @@ def player_stat(update: Update, context: CallbackContext) -> None:
         context.bot.send_message(chat_id=update.effective_chat.id, text="Бля, че то пошло не так. Попробуй по-другому")
 
 
+def get_streak_leader():
+    max_streak = 0
+    min_streak = 0
+
+
 def start_team_buildup(update: Update, context: CallbackContext) -> None:
     """Sends a message with three inline buttons attached."""
 
@@ -230,6 +264,43 @@ def start_team_buildup(update: Update, context: CallbackContext) -> None:
     context.user_data["current_players"] = []
 
 
+def generate_teams(players, ind):
+    mmr_dict = mmr_list[-1]
+    sum_v = sum([mmr_dict[player] for player in players])
+
+    teams_list = []
+
+    for i in range(10):
+        for j in range(i + 1, 10):
+            for k in range(j + 1, 10):
+                for x in range(k + 1, 10):
+                    for y in range(x + 1, 10):
+                        sum_g = mmr_dict[players[i]] + mmr_dict[players[j]] + mmr_dict[players[k]] + mmr_dict[
+                            players[x]] + mmr_dict[players[y]]
+                        sum_r = sum_v - sum_g
+
+                        # if abs(sum_g-sum_r) < best.min_diff:
+                        #     best.min_diff = abs(sum_g-sum_r)
+                        #     best.min_avg_green = sum_g/5
+                        #     best.min_avg_red = sum_r/5
+                        #     best.greens = [players[i], players[j], players[k], players[x], players[y]]
+                        #     best.reds = list(set(players).difference(set(best.greens)))
+
+                        best = TwoTeamsSplitting()
+
+                        best.min_diff = abs(sum_g - sum_r)
+                        best.min_avg_green = sum_g / 5
+                        best.min_avg_red = sum_r / 5
+                        best.greens = [players[i], players[j], players[k], players[x], players[y]]
+                        best.reds = list(set(players).difference(set(best.greens)))
+
+                        teams_list += [best]
+
+    teams_list = sorted(teams_list, key=lambda x: x.min_diff)
+
+    return teams_list[ind * 2]
+
+
 def continue_team_buildup(update: Update, context: CallbackContext) -> None:
     """Parses the CallbackQuery and updates the message text."""
     query = update.callback_query
@@ -240,6 +311,9 @@ def continue_team_buildup(update: Update, context: CallbackContext) -> None:
         return
 
     context.user_data["current_players"] += [query.data]
+
+    # context.user_data["current_players"] = ["Евдокимов", "Кисляков", "Станкевич", "Занкин", "Беляев",
+    #  "Русейкин", "Имайчев", "Мелешин", "Козлов", "Фролов"]
 
     if len(context.user_data["current_players"]) < 10:
         current_players_text = ", ".join(context.user_data["current_players"])
@@ -253,41 +327,99 @@ def continue_team_buildup(update: Update, context: CallbackContext) -> None:
         query.edit_message_text(text=f"Выбери состав: {current_players_text}", reply_markup=reply_markup)
 
     else:
-        mmr_dict = mmr_list[-1]
-        players = context.user_data["current_players"]
-        sum_v = sum([mmr_dict[player] for player in players])
+        best = generate_teams(context.user_data["current_players"], 0)
 
-        min_diff = 100000000
-        min_avg_green = 0
-        min_avg_red = 0
+        answer_query = ""
+        green_string = ", ".join(best.greens)
+        red_string = ", ".join(best.reds)
+        answer_query += f"Оптимальные составы\n\nКрасные 🔴: {red_string} (Средний MMR = {best.min_avg_red})\nЗеленые 🟢: {green_string} (Средний MMR = {best.min_avg_green})\n\n"
 
-        for i in range(10):
-            for j in range(i + 1, 10):
-                for k in range(j + 1, 10):
-                    for x in range(k + 1, 10):
-                        for y in range(x + 1, 10):
-                            sum_g = mmr_dict[players[i]] + mmr_dict[players[j]] + mmr_dict[players[k]] + mmr_dict[
-                                players[x]] + mmr_dict[players[y]]
-                            sum_r = sum_v - sum_g
+        # green_string = ", ".join(second_best.greens)
+        # red_string = ", ".join(second_best.reds)
+        # answer_query += f"Оптимальные составы\n\nКрасные 🔴: {red_string} (Средний MMR = {second_best.min_avg_red})\nЗеленые 🟢: {green_string} (Средний MMR = {second_best.min_avg_green})\n\n"
 
-                            if abs(sum_g - sum_r) < min_diff:
-                                min_diff = abs(sum_g - sum_r)
-                                min_avg_green = sum_g / 5
-                                min_avg_red = sum_r / 5
-                                greens = [players[i], players[j], players[k], players[x], players[y]]
-                                reds = list(set(players).difference(set(greens)))
+        query.edit_message_text(text=answer_query)
 
-        green_string = ", ".join(greens)
-        red_string = ", ".join(reds)
-        query.edit_message_text(
-            text=f"Оптимальные составы\n\nКрасные 🔴: {red_string} (Средний MMR = {min_avg_red})\nЗеленые 🟢: {green_string} (Средний MMR = {min_avg_green})")
-
-        context.bot.send_poll(
+        message = context.bot.send_poll(
             chat_id=update.effective_chat.id,
-            question="Ставки на спорт",
+            question="Нормальные составы?",
+            options=[
+                "Отлично, играем",
+                "Херня, давай следующие"
+            ]
+        )
+
+        payload = {
+            message.poll.id: {
+                "chat_id": update.effective_chat.id,
+                "message_id": message.message_id,
+                "next_team_ind": 1,
+                "players": context.user_data["current_players"]
+            }
+        }
+        context.bot_data.update(payload)
+
+
+def receive_poll_answer(update: Update, context: CallbackContext) -> None:
+    answer = update.poll
+    try:
+        data = context.bot_data[update.poll.id]
+    except:
+        return
+    print(data)
+
+    result_dict = {x["text"]: x["voter_count"] for x in answer["options"]}
+
+    if result_dict["Херня, давай следующие"] >= 7:
+
+        context.bot.stop_poll(
+            chat_id=data["chat_id"],
+            message_id=int(data["message_id"])
+        )
+
+        best = generate_teams(data["players"], data["next_team_ind"])
+
+        answer_query = ""
+        green_string = ", ".join(best.greens)
+        red_string = ", ".join(best.reds)
+        answer_query += f"Ну вот вам еще состав, нравится?\n\nКрасные 🔴: {red_string} (Средний MMR = {best.min_avg_red})\nЗеленые 🟢: {green_string} (Средний MMR = {best.min_avg_green})\n\n"
+
+        context.bot.send_message(
+            chat_id=data["chat_id"],
+            text=answer_query,
+            reply_to_message_id=int(data["message_id"])
+        )
+
+        message = context.bot.send_poll(
+            chat_id=data["chat_id"],
+            question="Нормальные составы?",
+            options=[
+                "Отлично, играем",
+                "Херня, давай следующие"
+            ]
+        )
+
+        payload = {
+            message.poll.id: {
+                "chat_id": data["chat_id"],
+                "message_id": message.message_id,
+                "next_team_ind": int(data["next_team_ind"]) + 1,
+                "players": data["players"]
+            }
+        }
+        context.bot_data.update(payload)
+    elif result_dict["Отлично, играем"] >= 7:
+        context.bot.stop_poll(
+            chat_id=data["chat_id"],
+            message_id=int(data["message_id"])
+        )
+
+        message = context.bot.send_poll(
+            chat_id=data["chat_id"],
+            question="Огонь, играем! А теперь ставки на спорт",
             options=[
                 "Красные соснут",
-                "Красные соснут, но не в этот раз"
+                "Красные соснут, но не сегодня"
             ]
         )
 
@@ -313,7 +445,8 @@ dispatcher.add_handler(CommandHandler("start_team_buildup", start_team_buildup))
 dispatcher.add_handler(CallbackQueryHandler(continue_team_buildup))
 dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("start", help_command))
+dispatcher.add_handler(PollHandler(receive_poll_answer))
 
-for key in players_stats:
-    print(key, '->', players_stats[key].current_winstreak)
-"updater.start_polling()"
+# for key in players_stats:
+#     print(key, '->', players_stats[key].to_markdown())
+updater.start_polling()
