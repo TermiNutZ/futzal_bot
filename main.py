@@ -13,6 +13,8 @@ from collections import defaultdict
 import json
 import copy
 
+ignore_list = ["Мустафа", "Охранник", "Фастик", "Пивкин", "Рандомный чел", "Костров"]
+
 matplotlib.pyplot.switch_backend('Agg')
 
 df_stat = pd.read_csv("stats.tsv", delimiter="\t")
@@ -96,6 +98,7 @@ class PlayerStats:
             "Забито командой": self.team_scored,
             "Пропущено командой": self.team_missed,
             "Разница мячей командой": self.team_scored - self.team_missed,
+            "Winstreak": self.current_winstreak,
             "MMR": self.mmr
 
         }
@@ -221,6 +224,20 @@ def get_rating(update: Update, context: CallbackContext):
         current_mmr_df.columns = ["Игрок", "MMR"]
         current_mmr_df.index += 1
         out_data = current_mmr_df.to_markdown()
+
+        context.bot.send_message(chat_id=update.effective_chat.id, text="```stats\n{}```".format(out_data),
+                                 parse_mode=ParseMode.MARKDOWN_V2)
+    except:
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Бля, че то пошло не так. Попробуй по-другому")
+
+
+def get_winstreak(update: Update, context: CallbackContext):
+    try:
+        logging.log(logging.INFO, "Trying to get winstreak")
+        sub_players_df = players_df[["Имя", "Winstreak"]]
+        sub_players_df = sub_players_df[sub_players_df["Имя"].apply(lambda x: x not in ignore_list)]
+        sub_players_df = sub_players_df.sort_values("Winstreak", ascending=False)
+        out_data = sub_players_df.to_markdown(index=False)
 
         context.bot.send_message(chat_id=update.effective_chat.id, text="```stats\n{}```".format(out_data),
                                  parse_mode=ParseMode.MARKDOWN_V2)
@@ -434,7 +451,8 @@ dispatcher = updater.dispatcher
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
 
-dispatcher.add_handler(CommandHandler('get_rating', get_rating))
+dispatcher.add_handler(CommandHandler('rating', get_rating))
+dispatcher.add_handler(CommandHandler('winstreak', get_winstreak))
 dispatcher.add_handler(CommandHandler("player_stat", player_stat))
 dispatcher.add_handler(CommandHandler("start_team_buildup", start_team_buildup))
 dispatcher.add_handler(CallbackQueryHandler(continue_team_buildup))
