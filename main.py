@@ -113,13 +113,13 @@ class PlayerStats:
             return "Ещё не играл"
         if self.current_winstreak == 1:
             return f"{self.current_winstreak} победа"
-        if 2 < self.current_winstreak < 5:
+        if 2 <= self.current_winstreak < 5:
             return f"{self.current_winstreak} победы подряд"
         if self.current_winstreak >= 5:
             return f"{self.current_winstreak} побед подряд"
         if self.current_winstreak == -1:
             return f"{abs(self.current_winstreak)} поражение"
-        if -5 < self.current_winstreak < -2:
+        if -5 < self.current_winstreak <= -2:
             return f"{abs(self.current_winstreak)} поражения подряд"
         if self.current_winstreak <= -5:
             return f"{abs(self.current_winstreak)} поражений подряд"
@@ -242,11 +242,6 @@ def player_stat(update: Update, context: CallbackContext) -> None:
                                caption=right_player.to_markdown(), parse_mode=ParseMode.MARKDOWN_V2)
     except:
         context.bot.send_message(chat_id=update.effective_chat.id, text="Бля, че то пошло не так. Попробуй по-другому")
-
-
-def get_streak_leader():
-    max_streak = 0
-    min_streak = 0
 
 
 def start_team_buildup(update: Update, context: CallbackContext) -> None:
