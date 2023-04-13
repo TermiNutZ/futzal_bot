@@ -13,12 +13,19 @@ from collections import defaultdict
 import json
 import copy
 
-ignore_list = ["Мустафа", "Охранник", "Фастик", "Пивкин", "Рандомный чел", "Костров"]
+ignore_list = [
+    "Джулай",
+    "Джулай младший",
+    "Охранник", "Пивкин", "Рандомный чел",
+     "Костров", "Аксенов", "Гришин",
+     "Станкевич", "_Мустафа_"]
 
 matplotlib.pyplot.switch_backend('Agg')
 
 df_stat = pd.read_csv("stats.tsv", delimiter="\t")
 df_stat["red_sucks"] = df_stat["red_score"] < df_stat["green_score"]
+
+goals_stat = pd.read_csv("goals.tsv", delimiter="\t")
 
 start_mmr = json.load(open("player_mmr.json", "r", encoding="utf-8"))
 mmr_list = [start_mmr]
@@ -41,6 +48,10 @@ for i, row in df_stat[df_stat["date"] > "2022-04-06"].sort_values("date").iterro
     for i in range(1, 6):
         current_mmr[row["red_player{}".format(i)]] += mmr_diff
         current_mmr[row["green_player{}".format(i)]] -= mmr_diff
+
+        # for played games
+        current_mmr[row["red_player{}".format(i)]] += 2
+        current_mmr[row["green_player{}".format(i)]] += 2
 
     mmr_list += [current_mmr]
 
@@ -222,6 +233,7 @@ def get_rating(update: Update, context: CallbackContext):
         logging.log(logging.INFO, "Trying to build rating")
         current_mmr_df = pd.DataFrame(mmr_history_df.iloc[-1].drop("date").sort_values(ascending=False)).reset_index()
         current_mmr_df.columns = ["Игрок", "MMR"]
+        current_mmr_df = current_mmr_df[current_mmr_df["Игрок"].apply(lambda x: x not in ignore_list)].reset_index(drop=True)
         current_mmr_df.index += 1
         out_data = current_mmr_df.to_markdown()
 
@@ -229,6 +241,94 @@ def get_rating(update: Update, context: CallbackContext):
                                  parse_mode=ParseMode.MARKDOWN_V2)
     except:
         context.bot.send_message(chat_id=update.effective_chat.id, text="Бля, че то пошло не так. Попробуй по-другому")
+
+
+def get_goals(update: Update, context: CallbackContext):
+    try:
+        logging.log(logging.INFO, "Trying to build rating")
+        goal_count = goals_stat.groupby("goal").count().reset_index().sort_values("day", ascending=False).reset_index(drop=True)
+        goal_count = goal_count[["goal", "day"]]
+        goal_count.columns = ["Игрок", "Голы"]
+        goal_count.index += 1
+
+        out_data = goal_count.to_markdown()
+
+        context.bot.send_message(chat_id=update.effective_chat.id, text="```stats\n{}```".format(out_data),
+                                 parse_mode=ParseMode.MARKDOWN_V2)
+    except:
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Бля, че то пошло не так. Попробуй по-другому")
+
+
+def get_assist(update: Update, context: CallbackContext):
+    try:
+        logging.log(logging.INFO, "Trying to build rating")
+        goal_count = goals_stat.groupby("assist").count().reset_index().sort_values("day", ascending=False).reset_index(drop=True)
+        goal_count = goal_count[["assist", "day"]]
+        goal_count.columns = ["Игрок", "Голевые пасы"]
+        goal_count.index += 1
+
+        out_data = goal_count.to_markdown()
+
+        context.bot.send_message(chat_id=update.effective_chat.id, text="```stats\n{}```".format(out_data),
+                                 parse_mode=ParseMode.MARKDOWN_V2)
+    except:
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Бля, че то пошло не так. Попробуй по-другому")
+
+
+def get_goal_plus_assist(update: Update, context: CallbackContext):
+    try:
+        logging.log(logging.INFO, "Trying to build rating")
+        
+        goal_count = goals_stat.groupby("goal").count().reset_index()
+        goal_count = goal_count[["goal", "day"]]
+        goal_count.columns = ["Игрок", "Гол"]
+
+        assist_count = goals_stat.groupby("assist").count().reset_index()
+        assist_count = assist_count[["assist", "day"]]
+        assist_count.columns = ["Игрок", "Пас"]
+
+        goal_assist = goal_count.merge(assist_count, how="outer", on="Игрок").fillna(0)
+        goal_assist["Гол + Пас"] = goal_assist["Гол"] + goal_assist["Пас"]
+        goal_assist = goal_assist.sort_values("Гол + Пас", ascending=False)
+        goal_assist = goal_assist.reset_index(drop=True)
+        goal_assist[["Гол + Пас", "Гол", "Пас"]] = goal_assist[["Гол + Пас", "Гол", "Пас"]].astype(int)
+        goal_assist.index += 1
+
+        out_data = goal_assist[["Игрок", "Гол + Пас", "Гол", "Пас"]].to_markdown()
+
+        context.bot.send_message(chat_id=update.effective_chat.id, text="```stats\n{}```".format(out_data),
+                                 parse_mode=ParseMode.MARKDOWN_V2)
+    except:
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Бля, че то пошло не так. Попробуй по-другому")
+
+
+def get_goal_plus_assist_rating(update: Update, context: CallbackContext):
+    try:
+        logging.log(logging.INFO, "Trying to build rating")
+
+        goals_stat_rating = goals_stat[goals_stat["is_rating"] == True]
+        
+        goal_count = goals_stat_rating.groupby("goal").count().reset_index()
+        goal_count = goal_count[["goal", "day"]]
+        goal_count.columns = ["Игрок", "Гол"]
+
+        assist_count = goals_stat_rating.groupby("assist").count().reset_index()
+        assist_count = assist_count[["assist", "day"]]
+        assist_count.columns = ["Игрок", "Пас"]
+
+        goal_assist = goal_count.merge(assist_count, how="outer", on="Игрок").fillna(0)
+        goal_assist["Гол + Пас"] = goal_assist["Гол"] + goal_assist["Пас"]
+        goal_assist = goal_assist.sort_values("Гол + Пас", ascending=False)
+        goal_assist = goal_assist.reset_index(drop=True)
+        goal_assist[["Гол + Пас", "Гол", "Пас"]] = goal_assist[["Гол + Пас", "Гол", "Пас"]].astype(int)
+        goal_assist.index += 1
+
+        out_data = goal_assist[["Игрок", "Гол + Пас", "Гол", "Пас"]].to_markdown()
+
+        context.bot.send_message(chat_id=update.effective_chat.id, text="```stats\n{}```".format(out_data),
+                                 parse_mode=ParseMode.MARKDOWN_V2)
+    except Exception as e:
+        context.bot.send_message(chat_id=update.effective_chat.id, text=str(e))
 
 
 def get_winstreak(update: Update, context: CallbackContext):
@@ -306,6 +406,9 @@ def generate_teams(players, ind):
                         best.greens = [players[i], players[j], players[k], players[x], players[y]]
                         best.reds = list(set(players).difference(set(best.greens)))
 
+                        best.greens = sorted(best.greens, key=lambda x: -mmr_dict[x])
+                        best.reds = sorted(best.reds, key=lambda x: -mmr_dict[x])
+
                         teams_list += [best]
 
     teams_list = sorted(teams_list, key=lambda x: x.min_diff)
@@ -340,23 +443,29 @@ def continue_team_buildup(update: Update, context: CallbackContext) -> None:
 
     else:
         best = generate_teams(context.user_data["current_players"], 0)
+        second_best = generate_teams(context.user_data["current_players"], 1)
+
 
         answer_query = ""
         green_string = ", ".join(best.greens)
         red_string = ", ".join(best.reds)
-        answer_query += f"Оптимальные составы\n\nКрасные 🔴: {red_string} (Средний MMR = {best.min_avg_red})\nЗеленые 🟢: {green_string} (Средний MMR = {best.min_avg_green})\n\n"
-
-        # green_string = ", ".join(second_best.greens)
-        # red_string = ", ".join(second_best.reds)
-        # answer_query += f"Оптимальные составы\n\nКрасные 🔴: {red_string} (Средний MMR = {second_best.min_avg_red})\nЗеленые 🟢: {green_string} (Средний MMR = {second_best.min_avg_green})\n\n"
+        answer_query += f"Состав #1\n\nКрасные 🔴: {red_string} (Средний MMR = {best.min_avg_red})\nЗеленые 🟢: {green_string} (Средний MMR = {best.min_avg_green})\n\n"
 
         query.edit_message_text(text=answer_query)
 
+        answer_query = ""
+        green_string = ", ".join(second_best.greens)
+        red_string = ", ".join(second_best.reds)
+        answer_query += f"Состав #2\n\nКрасные 🔴: {red_string} (Средний MMR = {second_best.min_avg_red})\nЗеленые 🟢: {green_string} (Средний MMR = {second_best.min_avg_green})\n\n"
+
+        context.bot.send_message(chat_id=update.effective_chat.id, text=answer_query)
+
         message = context.bot.send_poll(
             chat_id=update.effective_chat.id,
-            question="Нормальные составы?",
+            question="Какой состав лучше?",
             options=[
-                "Отлично, играем",
+                "#1",
+                "#2",
                 "Херня, давай следующие"
             ]
         )
@@ -365,7 +474,7 @@ def continue_team_buildup(update: Update, context: CallbackContext) -> None:
             message.poll.id: {
                 "chat_id": update.effective_chat.id,
                 "message_id": message.message_id,
-                "next_team_ind": 1,
+                "next_team_ind": 2,
                 "players": context.user_data["current_players"]
             }
         }
@@ -382,7 +491,7 @@ def receive_poll_answer(update: Update, context: CallbackContext) -> None:
 
     result_dict = {x["text"]: x["voter_count"] for x in answer["options"]}
 
-    if result_dict["Херня, давай следующие"] >= 7:
+    if result_dict["Херня, давай следующие"] >= 6:
 
         context.bot.stop_poll(
             chat_id=data["chat_id"],
@@ -420,7 +529,10 @@ def receive_poll_answer(update: Update, context: CallbackContext) -> None:
             }
         }
         context.bot_data.update(payload)
-    elif result_dict["Отлично, играем"] >= 7:
+    elif result_dict["#1"] >= 6 or result_dict["#2"] >= 6:
+        id_of_winner = 1
+        if result_dict["#2"] >= 6:
+            id_of_winner = 2
         context.bot.stop_poll(
             chat_id=data["chat_id"],
             message_id=int(data["message_id"])
@@ -428,7 +540,21 @@ def receive_poll_answer(update: Update, context: CallbackContext) -> None:
 
         message = context.bot.send_poll(
             chat_id=data["chat_id"],
-            question="Огонь, играем! А теперь ставки на спорт",
+            question=f"Победил состав #{id_of_winner}\nА теперь ставки на спорт",
+            options=[
+                "Красные соснут",
+                "Красные соснут, но не сегодня"
+            ]
+        )
+    elif result_dict["Отлично, играем"] >= 6:
+        context.bot.stop_poll(
+            chat_id=data["chat_id"],
+            message_id=int(data["message_id"])
+        )
+
+        message = context.bot.send_poll(
+            chat_id=data["chat_id"],
+            question=f"Состав выбран! А теперь ставки на спорт",
             options=[
                 "Красные соснут",
                 "Красные соснут, но не сегодня"
@@ -439,7 +565,7 @@ def receive_poll_answer(update: Update, context: CallbackContext) -> None:
 def help_command(update: Update, context: CallbackContext) -> None:
     """Displays info on how to use the bot."""
     update.message.reply_text(
-        "/get_rating чтобы получить общий рейтинг\n/player_stat [Фамилия] чтобы получить персональную статистику игрока\n/start_team_buildup чтобы получить идеальный состав")
+        "/rating чтобы получить общий рейтинг\n/player_stat [Фамилия] чтобы получить персональную статистику игрока\n/start_team_buildup чтобы получить идеальный состав")
 
 
 with open('token.txt', encoding="utf-8") as f:
@@ -452,6 +578,10 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
                     level=logging.INFO)
 
 dispatcher.add_handler(CommandHandler('rating', get_rating))
+dispatcher.add_handler(CommandHandler('goals', get_goals))
+dispatcher.add_handler(CommandHandler('assists', get_assist))
+dispatcher.add_handler(CommandHandler('goal_ass', get_goal_plus_assist))
+dispatcher.add_handler(CommandHandler('goal_ass_rating', get_goal_plus_assist_rating))
 dispatcher.add_handler(CommandHandler('winstreak', get_winstreak))
 dispatcher.add_handler(CommandHandler("player_stat", player_stat))
 dispatcher.add_handler(CommandHandler("start_team_buildup", start_team_buildup))
