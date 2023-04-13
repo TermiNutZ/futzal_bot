@@ -347,7 +347,7 @@ def get_winstreak(update: Update, context: CallbackContext):
 
 def player_stat(update: Update, context: CallbackContext) -> None:
     try:
-        player_name = " ".join(context.args)
+        player_name = " ".join(context.args).capitalize()
 
         logging.log(logging.INFO, player_name)
 
