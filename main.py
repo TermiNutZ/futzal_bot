@@ -2,6 +2,7 @@ from telegram import Update, ParseMode, InlineKeyboardButton, InlineKeyboardMark
 from telegram.ext import CallbackContext, CommandHandler, Updater, MessageHandler, CallbackQueryHandler, PollHandler
 from collections import deque
 import logging
+import datetime as dt
 
 import matplotlib
 from matplotlib import pyplot as plt
@@ -17,8 +18,8 @@ ignore_list = [
     "Джулай",
     "Джулай младший",
     "Охранник", "Пивкин", "Рандомный чел",
-     "Костров", "Аксенов", "Гришин",
-     "Станкевич", "_Мустафа_"]
+     "Костров", "Аксенов", "_Мустафа_", "Шалаев", "Беляев",
+     "Орешин", "Бодяжин", "Коновалов", "Тарасов"]
 
 matplotlib.pyplot.switch_backend('Agg')
 
@@ -139,9 +140,10 @@ class PlayerStats:
             return f"{abs(self.current_winstreak)} поражений подряд"
 
     def get_mmr_plot(self, mmr_df):
-        plt.figure()
+        plt.figure(figsize=(15, 10))
         plt.xkcd()
-        plt.plot(mmr_history_df["date"], mmr_history_df[self.player_name])
+        dates = [dt.datetime.strptime(d,'%Y-%m-%d').date() for d in mmr_history_df["date"]]
+        plt.plot(dates, mmr_history_df[self.player_name])
         plt.title(f"История MMR {self.player_name}")
         filename = f'mmr_plots/{self.player_name}_mmr.png'
         plt.savefig(filename)
@@ -302,6 +304,7 @@ def get_goal_plus_assist(update: Update, context: CallbackContext):
         context.bot.send_message(chat_id=update.effective_chat.id, text="Бля, че то пошло не так. Попробуй по-другому")
 
 
+
 def get_goal_plus_assist_rating(update: Update, context: CallbackContext):
     try:
         logging.log(logging.INFO, "Trying to build rating")
@@ -319,6 +322,7 @@ def get_goal_plus_assist_rating(update: Update, context: CallbackContext):
         goal_assist = goal_count.merge(assist_count, how="outer", on="Игрок").fillna(0)
         goal_assist["Гол + Пас"] = goal_assist["Гол"] + goal_assist["Пас"]
         goal_assist = goal_assist.sort_values("Гол + Пас", ascending=False)
+        goal_assist = goal_assist[goal_assist["Игрок"].apply(lambda x: x not in ignore_list)]
         goal_assist = goal_assist.reset_index(drop=True)
         goal_assist[["Гол + Пас", "Гол", "Пас"]] = goal_assist[["Гол + Пас", "Гол", "Пас"]].astype(int)
         goal_assist.index += 1
@@ -329,6 +333,54 @@ def get_goal_plus_assist_rating(update: Update, context: CallbackContext):
                                  parse_mode=ParseMode.MARKDOWN_V2)
     except Exception as e:
         context.bot.send_message(chat_id=update.effective_chat.id, text=str(e))
+
+def get_player_games_played_for_dates(dates):
+    df_stat_dates = df_stat[df_stat["date"].apply(lambda x: x in dates)]
+    player_game_count = defaultdict(int)
+
+    for ind, row in df_stat_dates.iterrows():
+        for i in range(1,6):
+            player_game_count[row[f"red_player{i}"]] += 1
+            player_game_count[row[f"green_player{i}"]] += 1
+
+    return pd.DataFrame(player_game_count.items(), columns=['Игрок', 'Количество игр'])
+
+
+def get_goal_plus_assist_per_game_rating(update: Update, context: CallbackContext):
+    try:
+        logging.log(logging.INFO, "Trying to build rating")
+
+        goals_stat_rating = goals_stat[goals_stat["is_rating"] == True]
+        games_count_df = get_player_games_played_for_dates(goals_stat_rating["day"].values)
+
+        
+        goal_count = goals_stat_rating.groupby("goal").count().reset_index()
+        goal_count = goal_count[["goal", "day"]]
+        goal_count.columns = ["Игрок", "Гол"]
+
+        assist_count = goals_stat_rating.groupby("assist").count().reset_index()
+        assist_count = assist_count[["assist", "day"]]
+        assist_count.columns = ["Игрок", "Пас"]
+
+        goal_assist = goal_count.merge(assist_count, how="outer", on="Игрок")
+        goal_assist_games = games_count_df.merge(goal_assist, how="left", on="Игрок").fillna(0)
+        goal_assist_games["Гол + Пас"] = 1.0*(goal_assist_games["Гол"] + goal_assist_games["Пас"])/goal_assist_games["Количество игр"]
+        goal_assist_games["Гол"] = 1.0*(goal_assist_games["Гол"])/goal_assist_games["Количество игр"]
+        goal_assist_games["Пас"] = 1.0*(goal_assist_games["Пас"])/goal_assist_games["Количество игр"]
+
+        goal_assist_games = goal_assist_games.sort_values("Гол + Пас", ascending=False)
+        goal_assist_games = goal_assist_games[goal_assist_games["Игрок"].apply(lambda x: x not in ignore_list)]
+        goal_assist_games = goal_assist_games.reset_index(drop=True)
+        goal_assist_games[["Гол + Пас", "Гол", "Пас"]] = goal_assist_games[["Гол + Пас", "Гол", "Пас"]].astype(float)
+        goal_assist_games.index += 1
+
+        out_data = goal_assist_games[["Игрок", "Гол + Пас", "Гол", "Пас"]].to_markdown(floatfmt=".2f")
+
+        context.bot.send_message(chat_id=update.effective_chat.id, text="```stats\n{}```".format(out_data),
+                                 parse_mode=ParseMode.MARKDOWN_V2)
+    except Exception as e:
+        context.bot.send_message(chat_id=update.effective_chat.id, text=str(e))
+
 
 
 def get_winstreak(update: Update, context: CallbackContext):
@@ -357,8 +409,8 @@ def player_stat(update: Update, context: CallbackContext) -> None:
         right_player = players_stats[player_name]
         context.bot.send_photo(chat_id=update.effective_chat.id, photo=right_player.get_mmr_plot(mmr_history_df),
                                caption=right_player.to_markdown(), parse_mode=ParseMode.MARKDOWN_V2)
-    except:
-        context.bot.send_message(chat_id=update.effective_chat.id, text="Бля, че то пошло не так. Попробуй по-другому")
+    except Exception as e:
+        context.bot.send_message(chat_id=update.effective_chat.id, text=str(e))
 
 
 def start_team_buildup(update: Update, context: CallbackContext) -> None:
@@ -582,6 +634,7 @@ dispatcher.add_handler(CommandHandler('goals', get_goals))
 dispatcher.add_handler(CommandHandler('assists', get_assist))
 dispatcher.add_handler(CommandHandler('goal_ass', get_goal_plus_assist))
 dispatcher.add_handler(CommandHandler('goal_ass_rating', get_goal_plus_assist_rating))
+dispatcher.add_handler(CommandHandler('goal_ass_per_game_rating', get_goal_plus_assist_per_game_rating))
 dispatcher.add_handler(CommandHandler('winstreak', get_winstreak))
 dispatcher.add_handler(CommandHandler("player_stat", player_stat))
 dispatcher.add_handler(CommandHandler("start_team_buildup", start_team_buildup))
