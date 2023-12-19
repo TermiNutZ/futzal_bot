@@ -19,7 +19,7 @@ ignore_list = [
     "Джулай младший",
     "Охранник", "Пивкин", "Рандомный чел",
      "Костров", "Аксенов", "_Мустафа_", "Шалаев", "Беляев",
-     "Орешин", "Бодяжин", "Коновалов", "Тарасов"]
+    "Бодяжин", "Коновалов",  "Мустафа",  "Маркитантов", "Станкевич", "Кисляков", "Никитин"]
 
 matplotlib.pyplot.switch_backend('Agg')
 
@@ -543,7 +543,7 @@ def receive_poll_answer(update: Update, context: CallbackContext) -> None:
 
     result_dict = {x["text"]: x["voter_count"] for x in answer["options"]}
 
-    if result_dict["Херня, давай следующие"] >= 6:
+    if result_dict["Херня, давай следующие"] >= 8:
 
         context.bot.stop_poll(
             chat_id=data["chat_id"],
@@ -581,9 +581,9 @@ def receive_poll_answer(update: Update, context: CallbackContext) -> None:
             }
         }
         context.bot_data.update(payload)
-    elif result_dict["#1"] >= 6 or result_dict["#2"] >= 6:
+    elif result_dict["#1"] >= 8 or result_dict["#2"] >= 8:
         id_of_winner = 1
-        if result_dict["#2"] >= 6:
+        if result_dict["#2"] >= 8:
             id_of_winner = 2
         context.bot.stop_poll(
             chat_id=data["chat_id"],
@@ -598,7 +598,7 @@ def receive_poll_answer(update: Update, context: CallbackContext) -> None:
                 "Красные соснут, но не сегодня"
             ]
         )
-    elif result_dict["Отлично, играем"] >= 6:
+    elif result_dict["Отлично, играем"] >= 8:
         context.bot.stop_poll(
             chat_id=data["chat_id"],
             message_id=int(data["message_id"])
